@@ -74,7 +74,7 @@ namespace NHPerformance
 				.SetProperty(NHibernate.Cfg.Environment.UseProxyValidator, Boolean.FalseString)
 				.SetProperty(NHibernate.Cfg.Environment.UseSecondLevelCache, Boolean.FalseString)
 				.SetProperty(NHibernate.Cfg.Environment.UseSqlComments, Boolean.FalseString)
-				.SetProperty(NHibernate.Cfg.Environment.UseQueryCache, Boolean.TrueString)
+				.SetProperty(NHibernate.Cfg.Environment.UseQueryCache, Boolean.FalseString)
 				.SetProperty(NHibernate.Cfg.Environment.WrapResultSets, Boolean.TrueString);
 
 			cfg.EventListeners.PostLoadEventListeners = new IPostLoadEventListener[0];
@@ -103,8 +103,7 @@ namespace NHPerformance
 
 		static Int64 Measure(Action action)
 		{
-			var watch = new Stopwatch();
-			watch.Start();
+			var watch = Stopwatch.StartNew();
 			action();
 			return (watch.ElapsedMilliseconds);
 		}
@@ -169,9 +168,8 @@ namespace NHPerformance
 		static void Add()
 		{
 			var cfg = Common()
-				.SetProperty(NHibernate.Cfg.Environment.Hbm2ddlAuto, SchemaAutoAction.Create.ToString());
-
-			AddMapping(cfg, MappingMode.Conventional);
+				.SetProperty(NHibernate.Cfg.Environment.Hbm2ddlAuto, SchemaAutoAction.Create.ToString())
+				.SetProperty(NHibernate.Cfg.Environment.BatchSize, "100");
 
 			using (var sessionFactory = cfg.BuildSessionFactory())
 			using (var session = sessionFactory.OpenSession())
@@ -181,14 +179,14 @@ namespace NHPerformance
 				var measure = new Measure { Name = "Measure A" };
 				var now = DateTime.UtcNow;
 
+				session.Save(device);
+				session.Save(measure);
+
 				for (var i = 0; i < NumberOfEntities; ++i)
 				{
 					var value = new Value { Device = device, Measure = measure, Timestamp = now.AddSeconds(i), Val = i };
 					session.Save(value);
 				}
-
-				session.Save(device);
-				session.Save(measure);
 
 				tx.Commit();
 			}
@@ -215,8 +213,8 @@ namespace NHPerformance
 				x.Id(y => y.ValueId, y => y.Generator(Generators.Identity));
 				x.Property(y => y.Val, y => y.NotNullable(true));
 				x.Property(y => y.Timestamp, y => y.NotNullable(true));
-				x.ManyToOne(y => y.Measure, y => y.NotNullable(true));
-				x.ManyToOne(y => y.Device, y => y.NotNullable(true));
+				x.ManyToOne(y => y.Measure, y => { y.NotNullable(true); y.Lazy(LazyRelation.Proxy); });
+				x.ManyToOne(y => y.Device, y => { y.NotNullable(true); y.Lazy(LazyRelation.Proxy); });
 			});
 
 			var mappings = modelMapper.CompileMappingForAllExplicitlyAddedEntities();
@@ -228,7 +226,8 @@ namespace NHPerformance
 		{
 			var modelMapper = new ConventionModelMapper();
 			modelMapper.IsEntity((x, y) => x.IsClass == true && x.IsSealed == false && x.Namespace == typeof(Program).Namespace);
-			modelMapper.BeforeMapClass += (x, y, z) => { z.Id(a => a.Generator(Generators.Identity)); z.Lazy(false); };
+			modelMapper.BeforeMapClass += (x, y, z) => { z.Id(a => a.Generator(Generators.Identity)); z.Lazy(true); };
+			modelMapper.BeforeMapManyToOne += (x, y, z) => { z.Lazy(LazyRelation.Proxy); z.NotNullable(true); };
 
 			var mappings = modelMapper.CompileMappingFor(typeof(Program).Assembly.GetTypes().Where(x => x.IsPublic && x.IsSealed == false));
 

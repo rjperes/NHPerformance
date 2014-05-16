@@ -3,8 +3,8 @@ namespace NHPerformance
 {
 	public enum RunMode
 	{
-		Normal,
 		Optimized,
+		Normal,
 		Stateless,
 		Sql
 	}
